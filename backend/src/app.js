@@ -1,6 +1,8 @@
 import express from 'express';
 import authRoutes from './routes/authRoutes.js';
-import { authenticate } from "./middlewares/authMiddleware.js";
+import userRoutes from './routes/userRoutes.js';
+import projectRoutes from './routes/projectRoutes.js';
+import taskRoutes from './routes/taskRoutes.js';
 
 const app = express();
 
@@ -10,13 +12,12 @@ app.get('/health' , (req,res)=>{
     res.status(200).send('OK');
 });
 
-app.get("/me", authenticate, (req, res) => {
-    res.json({
-        message: "You are authenticated",
-        user: req.user
-    });
-});
+
 
 app.use('/auth',authRoutes);
+app.use('/users',userRoutes);
+app.use("/projects", projectRoutes);
+app.use("/tasks", taskRoutes);
+
 
 export default app;

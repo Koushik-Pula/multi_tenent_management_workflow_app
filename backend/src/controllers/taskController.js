@@ -6,47 +6,42 @@ import { isValidTaskTransition } from '../workflows/taskworkflow.js';
 export const createTask = async (req, res) => {
     const orgId = req.orgId;
     const { projectId } = req.params;
-    
-    // 1. Get all fields, including assigned_to
     const { title, description, priority, due_date, assigned_to } = req.body; 
 
     try {
         const result = await pool.query(
             `
             INSERT INTO tasks (
-                org_id,
-                project_id,
-                title,
-                description,
-                priority,
-                due_date,
-                created_by,
-                assigned_to  -- 8th Column
+                org_id, project_id, title, description, priority, due_date, created_by, assigned_to
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8) -- 8 Placeholders
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
             RETURNING id, title, status, priority, due_date, created_at, assigned_to
             `,
             [
-                orgId,
-                projectId,
-                title,
-                description || null,
-                priority || 3,
-                due_date || null,
-                req.user.userId,
-                assigned_to || null // 8th Value
+                orgId, projectId, title, 
+                description || null, priority || 3, due_date || null, 
+                req.user.userId, assigned_to || null
             ]
         );
 
+        // --- FIX IS HERE ---
+        // 'taskId' does not exist in this function. You must use 'result.rows[0].id'
+        await logAudit({
+            orgId,
+            userId: req.user.userId,
+            action: "CREATE_TASK",
+            entity: "TASK",
+            entityId: result.rows[0].id, // <--- CHANGED FROM taskId TO result.rows[0].id
+            details: { title: result.rows[0].title }
+        });
+
         res.status(201).json(result.rows[0]);
     } catch (err) {
-        console.error("Task Creation Error:", err); // <--- CHECK TERMINAL FOR THIS
+        console.error("Task Creation Error:", err);
         res.status(500).json({ message: "Failed to create task" });
     }
 };
 
-
-// server/controllers/taskController.js
 
 export const listTasks = async (req, res) => {
     const limit = parseInt(req.query.limit) || 20;
@@ -128,7 +123,7 @@ export const assignTask = async(req,res) => {
     try{
 
         const task = await pool.query(
-            `SELECT status FROM tasks WHERE id = $1 AND project_id = $2 AND org_id = $3`,
+            `SELECT status,title FROM tasks WHERE id = $1 AND project_id = $2 AND org_id = $3`,
             [taskId, projectId, orgId]
         );
 
@@ -183,7 +178,8 @@ export const assignTask = async(req,res) => {
             userId: req.user.userId,
             action: "ASSIGN_TASK",
             entity: "TASK",
-            entityId: taskId
+            entityId: taskId,
+            details: { title: task.rows[0].title }
         });
 
 
@@ -200,7 +196,7 @@ export const unassignTask = async(req,res) => {
 
     try{
         const task = await pool.query(
-            `SELECT status FROM tasks WHERE id = $1 AND project_id = $2 AND org_id = $3`,
+            `SELECT status,title FROM tasks WHERE id = $1 AND project_id = $2 AND org_id = $3`,
             [taskId, projectId, orgId]
         );
 
@@ -231,7 +227,8 @@ export const unassignTask = async(req,res) => {
             userId: req.user.userId,
             action: "UNASSIGN_TASK",
             entity: "TASK",
-            entityId: taskId
+            entityId: taskId,
+            details: { title: task.rows[0].title }
         });
 
 
@@ -259,7 +256,7 @@ export const updateTaskStatus = async(req,res) => {
     try{
     
         const taskResult = await pool.query(
-            `SELECT status,assigned_to FROM tasks
+            `SELECT status,assigned_to,title FROM tasks
              WHERE id = $1 AND project_id = $2 AND org_id = $3`,
              [taskId,projectId,orgId]
         );
@@ -299,7 +296,8 @@ export const updateTaskStatus = async(req,res) => {
             userId: req.user.userId,
             action: "UPDATE_TASK_STATUS",
             entity: "TASK",
-            entityId: taskId
+            entityId: taskId,
+            details: { title: taskResult.rows[0].title }
         });
 
         res.json({message: "task status updated successfully"});
@@ -354,7 +352,8 @@ export const updateTask = async(req,res) => {
             userId: req.user.userId,
             action: "UPDATE_TASK",
             entity: "TASK",
-            entityId: taskId
+            entityId: taskId,
+            details: { title: result.rows[0].title }
         });
 
         res.json({message:"task updated successfully",result:result.rows[0]});
@@ -369,47 +368,45 @@ export const deleteTask = async(req,res) => {
     const orgId = req.orgId;
 
     try{
-        const task = await pool.query(
-            `SELECT status FROM tasks WHERE id = $1 AND project_id = $2 AND org_id = $3`,
+        // 1. GET THE TITLE BEFORE DELETING (Important!)
+        const taskCheck = await pool.query(
+            `SELECT title, status FROM tasks WHERE id = $1 AND project_id = $2 AND org_id = $3`,
             [taskId, projectId, orgId]
         );
 
-        if (task.rows.length === 0) {
+        if (taskCheck.rows.length === 0) {
             return res.status(404).json({ message: "task not found" });
         }
 
-        if (task.rows[0].status === "DONE") {
-            return res.status(400).json({
-                message: "Completed tasks cannot be modified"
-            });
+        const taskTitle = taskCheck.rows[0].title;
+
+        if (taskCheck.rows[0].status === "DONE") {
+            return res.status(400).json({ message: "Completed tasks cannot be modified" });
         }
 
-        const result = await pool.query(
+        // 2. DELETE THE TASK
+        await pool.query(
             `DELETE FROM tasks
-             WHERE id = $1 AND project_id = $2 AND org_id = $3
-             RETURNING id`,
+             WHERE id = $1 AND project_id = $2 AND org_id = $3`,
              [taskId,projectId,orgId]
         );
 
-        if(result.rowCount === 0){
-            return res.status(404).json({message: "task not found"});
-        }
-
+        // 3. LOG AUDIT WITH THE SAVED TITLE
         await logAudit({
             orgId,
             userId: req.user.userId,
             action: "DELETE_TASK",
             entity: "TASK",
-            entityId: taskId
+            entityId: taskId,
+            details: { title: taskTitle } // <--- This saves the name forever
         });
-
 
         res.json({message: "task deleted successfully"});
     }catch(err){
         console.error(err);
         res.status(500).json({message: "failed to delete task"});
     }
-}
+};
 
 export const getMyTasks = async (req, res) => {
     const userId = req.user.userId;

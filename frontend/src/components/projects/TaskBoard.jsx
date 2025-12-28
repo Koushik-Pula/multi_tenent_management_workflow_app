@@ -10,6 +10,9 @@ export default function TaskBoard({ projectId }) {
     const [loading, setLoading] = useState(true);
     const [userProjectRole, setUserProjectRole] = useState("MEMBER");
 
+    // FIX 1: Robust ID extraction (same as ProjectTeam.jsx)
+    const myId = user?.userId || user?.id;
+
     const loadData = async () => {
         try {
             const [taskRes, memberRes] = await Promise.all([
@@ -23,13 +26,15 @@ export default function TaskBoard({ projectId }) {
             setTasks(taskData);
             setMembers(memberData);
 
-            // Determine if the current user is a MANAGER in this project
-            const currentUserInProject = memberData.find(m => m.id === user.userId);
-            if (currentUserInProject) {
-                setUserProjectRole(currentUserInProject.role);
+            // FIX 2: Robust Role Check (String comparison)
+            // This ensures we find the user even if ID types (string vs number) differ
+            if (myId) {
+                const currentUserInProject = memberData.find(m => String(m.id) === String(myId));
+                if (currentUserInProject) {
+                    setUserProjectRole(currentUserInProject.role);
+                }
             }
             
-            // Global Admins get Manager privileges by default
             if (user.role === 'ADMIN') {
                 setUserProjectRole('MANAGER');
             }
@@ -43,7 +48,8 @@ export default function TaskBoard({ projectId }) {
 
     useEffect(() => {
         if (projectId) loadData();
-    }, [projectId, user.userId]);
+    // FIX 3: Depend on myId instead of user.userId to prevent reload loops
+    }, [projectId, myId]);
 
     const handleAssign = async (taskId, userId) => {
         try {
@@ -91,7 +97,6 @@ export default function TaskBoard({ projectId }) {
         <div className="flex flex-col h-full">
             <div className="flex justify-between items-center mb-6 px-2">
                 <h2 className="text-lg font-bold text-gray-800">Project Board</h2>
-                {/* ROLE CHECK: Only Managers/Admins can see the Create Task button */}
                 {userProjectRole === 'MANAGER' && (
                     <CreateTaskModal projectId={projectId} onTaskCreated={loadData} />
                 )}
@@ -110,7 +115,7 @@ export default function TaskBoard({ projectId }) {
                         onDelete={handleDelete}
                         members={members}
                         userRole={userProjectRole}
-                        currentUserId={user.userId}
+                        currentUserId={myId} // Pass robust ID
                     />
                 ))}
             </div>
@@ -150,8 +155,9 @@ function TaskCard({ task, onMove, onAssign, onDelete, members, userRole, current
     const isDone = task.status === "DONE";
     const isManager = userRole === 'MANAGER';
     
-    // ROLE CHECK: Members can only move tasks assigned to them
-    const canMove = isManager || (task.assigned_to === currentUserId);
+    // FIX 4: Robust comparison for "Assigned To Me" check
+    const isAssignedToMe = String(task.assigned_to) === String(currentUserId);
+    const canMove = isManager || isAssignedToMe;
 
     return (
         <div className="bg-white p-4 rounded-lg shadow-sm border border-gray-200 hover:shadow-md transition-all group">
@@ -162,7 +168,6 @@ function TaskCard({ task, onMove, onAssign, onDelete, members, userRole, current
                     {task.priority === 1 ? "High" : task.priority === 2 ? "Medium" : "Low"}
                 </span>
 
-                {/* ROLE CHECK: Delete button only visible to Managers and if not DONE */}
                 {isManager && !isDone && (
                     <button 
                         onClick={() => onDelete(task.id)} 
@@ -185,7 +190,6 @@ function TaskCard({ task, onMove, onAssign, onDelete, members, userRole, current
                 <div className="flex flex-col gap-1">
                     <label className="text-[10px] font-semibold text-gray-400 uppercase">Assignee</label>
                     
-                    {/* ROLE CHECK: Assignee dropdown disabled for regular Members */}
                     <select
                         disabled={!isManager || isDone}
                         className={`text-[11px] border rounded-md px-2 py-1 outline-none w-full transition-colors ${
@@ -207,7 +211,6 @@ function TaskCard({ task, onMove, onAssign, onDelete, members, userRole, current
                     <div className="flex flex-col gap-1">
                         <label className="text-[10px] font-semibold text-gray-400 uppercase">Status</label>
                         
-                        {/* ROLE CHECK: Disable status change if not assigned to user and not a manager */}
                         <select 
                             disabled={!canMove || isDone}
                             className={`text-[11px] font-bold border-none bg-transparent p-0 focus:ring-0 ${

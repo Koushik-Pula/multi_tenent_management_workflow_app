@@ -1,132 +1,119 @@
 import pool from '../db/index.js';
 
+// --- 1. Get Logs for the Widget (Org or Personal) ---
 export const getAuditLogs = async (req, res) => {
     const orgId = req.orgId;
-
-    let {
-        entity,
-        action,
-        userId,
-        startDate,
-        endDate,
-        limit = 20,
-        offset = 0
-    } = req.query;
-
-    const safeLimit = Math.min(Number(limit) || 20, 100);
-    const safeOffset = Number(offset) || 0;
+    const userId = req.user.userId;
+    const userRole = req.user.role; 
+    const limit = parseInt(req.query.limit) || 10;
 
     try {
-        const conditions = ["a.org_id = $1"];
-        const values = [orgId];
-        let idx = 2;
+        let query;
+        let params;
 
-        if (entity) {
-            conditions.push(`a.entity = $${idx++}`);
-            values.push(entity);
+        if (userRole === 'ADMIN') {
+            query = `
+                SELECT 
+                    a.id,
+                    a.action,
+                    a.entity,
+                    a.entity_id,
+                    a.details,      -- <--- ADDED THIS
+                    a.created_at,
+                    ud.name as user_name 
+                FROM audit_logs a
+                LEFT JOIN user_details ud ON a.user_id = ud.user_id
+                WHERE a.org_id = $1 
+                ORDER BY a.created_at DESC LIMIT $2`;
+            params = [orgId, limit];
+        } else {
+            query = `
+                SELECT 
+                    a.id,
+                    a.action,
+                    a.entity,
+                    a.entity_id,
+                    a.details,      -- <--- ADDED THIS
+                    a.created_at,
+                    ud.name as user_name 
+                FROM audit_logs a
+                LEFT JOIN user_details ud ON a.user_id = ud.user_id
+                WHERE a.org_id = $1 AND a.user_id = $2
+                ORDER BY a.created_at DESC LIMIT $3`;
+            params = [orgId, userId, limit];
         }
 
-        if (action) {
-            conditions.push(`a.action = $${idx++}`);
-            values.push(action);
-        }
-
-        if (userId) {
-            conditions.push(`a.user_id = $${idx++}`);
-            values.push(userId);
-        }
-
-        if (startDate) {
-            conditions.push(`a.created_at >= $${idx++}`);
-            values.push(startDate);
-        }
-
-        if (endDate) {
-            conditions.push(`a.created_at <= $${idx++}`);
-            values.push(endDate);
-        }
-
-        const query = `
-            SELECT
-                a.id,
-                a.user_id,
-                ud.name AS user_name,
-                a.action,
-                a.entity,
-                a.entity_id,
-                a.created_at
-            FROM audit_logs a
-            JOIN user_details ud ON ud.user_id = a.user_id
-            WHERE ${conditions.join(" AND ")}
-            ORDER BY a.created_at DESC
-            LIMIT $${idx++} OFFSET $${idx}
-        `;
-
-        values.push(safeLimit, safeOffset);
-
-        const result = await pool.query(query, values);
-
-        res.json({
-            data: result.rows,
-            meta: {
-                limit: safeLimit,
-                offset: safeOffset,
-                count: result.rows.length
-            }
-        });
+        const result = await pool.query(query, params);
+        res.json({ data: result.rows });
     } catch (err) {
-        console.error(err);
-        res.status(500).json({ message: "Failed to fetch audit logs" });
+        console.error("Audit Fetch Error:", err);
+        res.status(500).json({ message: "Failed to fetch logs" });
     }
 };
 
+// --- 2. Explicit Endpoint for "My Activity" (If you prefer the separate route) ---
+export const getMyAuditLogs = async (req, res) => {
+    const userId = req.user.userId;
+    const orgId = req.orgId;
+    const limit = parseInt(req.query.limit) || 10;
 
+    try {
+        const result = await pool.query(
+            `SELECT 
+                a.id,
+                a.action, 
+                a.entity, 
+                a.entity_id, 
+                a.details,       -- <--- ADDED THIS
+                a.created_at,
+                ud.name as user_name
+             FROM audit_logs a
+             LEFT JOIN user_details ud ON a.user_id = ud.user_id
+             WHERE a.user_id = $1 AND a.org_id = $2
+             ORDER BY a.created_at DESC 
+             LIMIT $3`,
+            [userId, orgId, limit]
+        );
 
+        res.json({ data: result.rows });
+    } catch (err) {
+        console.error("Personal Audit Fetch Error:", err);
+        res.status(500).json({ message: "Failed to fetch your activity logs" });
+    }
+};
 
 
 export const getProjectAuditLogs = async (req, res) => {
     const { projectId } = req.params;
     const orgId = req.orgId;
-
-    let { limit = 20, offset = 0 } = req.query;
-
-    const safeLimit = Math.min(Number(limit) || 20, 100);
-    const safeOffset = Number(offset) || 0;
+    const limit = parseInt(req.query.limit) || 10;
 
     try {
         const result = await pool.query(
-            `
-            SELECT
+            `SELECT 
                 a.id,
-                a.user_id,
-                ud.name AS user_name,
                 a.action,
                 a.entity,
                 a.entity_id,
-                a.created_at
-            FROM audit_logs a
-            JOIN user_details ud ON ud.user_id = a.user_id
-            WHERE a.org_id = $1
-              AND a.entity = 'PROJECT'
-              AND a.entity_id = $2
-            ORDER BY a.created_at DESC
-            LIMIT $3 OFFSET $4
-            `,
-            [orgId, projectId, safeLimit, safeOffset]
+                a.details,      -- <--- Don't forget this!
+                a.created_at,
+                ud.name as user_name 
+             FROM audit_logs a
+             LEFT JOIN user_details ud ON a.user_id = ud.user_id
+             JOIN audit_logs a2 ON a.id = a2.id -- Verify project association via join if needed, or check logs directly
+             WHERE a.org_id = $1 
+               AND a.details->>'project_id' = $2 -- Option A: If you store project_id in details
+               -- OR Option B: If your audit_logs table has a project_id column (Recommended for simpler queries)
+               -- AND a.project_id = $2 
+             ORDER BY a.created_at DESC LIMIT $3`,
+            [orgId, projectId, limit]
         );
-
-        res.json({
-            data: result.rows,
-            meta: {
-                limit: safeLimit,
-                offset: safeOffset,
-                count: result.rows.length
-            }
-        });
+        
+  
+        
+        res.json({ data: result.rows });
     } catch (err) {
         console.error(err);
-        res.status(500).json({ message: "Failed to fetch project audit logs" });
+        res.status(500).json({ message: "Failed to fetch project logs" });
     }
 };
-
-

@@ -3,8 +3,10 @@ import { useParams, useNavigate } from "react-router-dom";
 import api from "../../api/axios";
 import AuditLogWidget from "../../components/dashboard/AuditLogWidget";
 import TaskBoard from "../../components/projects/TaskBoard";
-import ProjectTeam from "../../components/projects/ProjectTeam";
+// Ensure you saved the code above as ProjectTeam.jsx in this folder:
+import ProjectTeam from "../../components/projects/ProjectTeam"; 
 
+// ... (Icons remain the same) ...
 const ArchiveIcon = () => (
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 8v13H3V8"/><path d="M1 3h22v5H1z"/><path d="M10 12h4"/></svg>
 );
@@ -41,7 +43,6 @@ export default function ProjectDetails() {
                 ? `/projects/${projectId}/unarchive` 
                 : `/projects/${projectId}/archive`;
             await api.patch(endpoint);
-            // After archiving/unarchiving, we redirect to dashboard
             navigate('/dashboard');
         } catch (err) {
             alert(err.response?.data?.message || "Action failed");
@@ -52,18 +53,19 @@ export default function ProjectDetails() {
     if (!project) return <div className="p-8 text-center text-red-500">Project not found</div>;
 
     return (
-        <div className="flex flex-col h-[calc(100vh-6rem)]">
+        <div className="flex flex-col h-[calc(100vh-6rem)] animate-fade-in">
+            {/* Header */}
             <div className="bg-white border-b border-gray-200 px-8 py-5 flex justify-between items-start">
                 <div>
                     <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-3">
                         {project.name}
                         {project.is_archived && (
-                            <span className="bg-gray-100 text-gray-600 text-xs px-2 py-1 rounded-full font-medium border border-gray-200">
-                                Archived
+                            <span className="bg-amber-100 text-amber-700 text-xs px-2.5 py-0.5 rounded-full font-bold border border-amber-200">
+                                ARCHIVED
                             </span>
                         )}
                     </h1>
-                    <p className="text-gray-500 mt-1 max-w-2xl">
+                    <p className="text-gray-500 mt-1 max-w-2xl text-sm">
                         {project.description || "No description provided."}
                     </p>
                 </div>
@@ -71,43 +73,44 @@ export default function ProjectDetails() {
                 <div className="flex items-center gap-3">
                     <button
                         onClick={handleArchiveToggle}
-                        className="flex items-center gap-2 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors text-sm font-medium text-gray-700 shadow-sm"
+                        className={`flex items-center gap-2 px-4 py-2 border rounded-lg transition-all text-sm font-medium shadow-sm ${
+                            project.is_archived
+                                ? "border-green-200 bg-green-50 text-green-700 hover:bg-green-100"
+                                : "border-gray-300 bg-white text-gray-700 hover:bg-gray-50"
+                        }`}
                     >
                         {project.is_archived ? (
-                            <><RestoreIcon /> Restore</>
+                            <><RestoreIcon /> Restore Project</>
                         ) : (
-                            <><ArchiveIcon /> Archive</>
+                            <><ArchiveIcon /> Archive Project</>
                         )}
                     </button>
                 </div>
             </div>
 
+            {/* Tabs */}
             <div className="bg-white border-b border-gray-200 px-8">
-                <div className="flex gap-6">
-                    <Tab 
-                        label="Tasks" 
-                        active={activeTab === "TASKS"} 
-                        onClick={() => setActiveTab("TASKS")} 
-                    />
-                    <Tab 
-                        label="Team Members" 
-                        active={activeTab === "TEAM"} 
-                        onClick={() => setActiveTab("TEAM")} 
-                    />
-                    <Tab 
-                        label="Activity" 
-                        active={activeTab === "ACTIVITY"} 
-                        onClick={() => setActiveTab("ACTIVITY")} 
-                    />
+                <div className="flex gap-8">
+                    <Tab label="Tasks" active={activeTab === "TASKS"} onClick={() => setActiveTab("TASKS")} />
+                    <Tab label="Team Members" active={activeTab === "TEAM"} onClick={() => setActiveTab("TEAM")} />
+                    <Tab label="Activity" active={activeTab === "ACTIVITY"} onClick={() => setActiveTab("ACTIVITY")} />
                 </div>
             </div>
 
+            {/* Content Area */}
             <div className="flex-1 overflow-y-auto bg-gray-50 p-8">
                 {activeTab === "TASKS" && <TaskBoard projectId={projectId} />}
-                {activeTab === "TEAM" && <ProjectTeam projectId={projectId} />}
+                
+                {activeTab === "TEAM" && (
+                    <div className="max-w-5xl mx-auto">
+                        <ProjectTeam projectId={projectId} />
+                    </div>
+                )}
+                
                 {activeTab === "ACTIVITY" && (
-                    <div className="max-w-3xl mx-auto">
-                        <AuditLogWidget projectId={projectId} limit={20} />
+                    <div className="max-w-3xl mx-auto h-[600px]">
+                        {/* Ensure your AuditLogWidget handles the projectId prop correctly */}
+                        <AuditLogWidget projectId={projectId} limit={50} />
                     </div>
                 )}
             </div>
@@ -119,7 +122,7 @@ function Tab({ label, active, onClick }) {
     return (
         <button
             onClick={onClick}
-            className={`py-4 text-sm font-medium border-b-2 transition-colors ${
+            className={`py-4 text-sm font-medium border-b-2 transition-all ${
                 active
                     ? "border-blue-600 text-blue-600"
                     : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"

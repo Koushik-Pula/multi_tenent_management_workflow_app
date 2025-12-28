@@ -39,7 +39,8 @@ export const createProject = async(req,res)=> {
             userId,
             action: 'CREATE_PROJECT',
             entity: 'PROJECT',
-            entityId: project.id
+            entityId: project.id,
+            details: { name: project.name }
         });
 
         await client.query('COMMIT');
@@ -178,7 +179,8 @@ export const updateProject = async(req,res) => {
             userId: req.user.userId,
             action: 'UPDATE_PROJECT',
             entity: 'PROJECT',
-            entityId: projectId
+            entityId: projectId,
+            details: { name: result.rows[0].name }
         });
 
         res.json({
@@ -200,7 +202,7 @@ export const archiveProject = async(req,res) => {
             `UPDATE projects
              SET is_archived = true
              WHERE id = $1 AND org_id = $2
-             RETURNING id`,
+             RETURNING id,name`,
              [projectId,orgId]
         );
 
@@ -213,7 +215,8 @@ export const archiveProject = async(req,res) => {
             userId: req.user.userId,
             action: 'ARCHIVE_PROJECT',
             entity: 'PROJECT',
-            entityId: projectId
+            entityId: projectId,
+            details: { name: result.rows[0].name }
         });
 
         res.json({message: "Project archived"});
@@ -232,7 +235,7 @@ export const unarchiveProject = async(req,res) => {
             `UPDATE projects
              SET is_archived = false
              WHERE id = $1 AND org_id = $2
-             RETURNING id`,
+             RETURNING id,name`,
              [projectId,orgId]
         );
 
@@ -245,7 +248,8 @@ export const unarchiveProject = async(req,res) => {
             userId: req.user.userId,
             action: 'UNARCHIVE_PROJECT',
             entity: 'PROJECT',
-            entityId: projectId
+            entityId: projectId,
+            details: { name: result.rows[0].name }
         });
 
         res.json({message: "Project unarchived"});
@@ -273,9 +277,11 @@ export const addProjectMember = async (req,res) => {
     try{  
 
         const userResult = await pool.query(
-            `SELECT id FROM users
-             WHERE id = $1 AND org_id = $2 AND is_active = true`,
-             [userId,orgId]
+            `SELECT u.id, ud.name 
+            FROM users u
+            JOIN user_details ud ON u.id = ud.user_id
+            WHERE u.id = $1 AND u.org_id = $2 AND u.is_active = true`,
+            [userId, orgId]
         );
 
         if(userResult.rows.length === 0){
@@ -294,7 +300,8 @@ export const addProjectMember = async (req,res) => {
             userId: req.user.userId,
             action: "ADD_PROJECT_MEMBER",
             entity: "PROJECT_MEMBER",
-            entityId: projectId
+            entityId: projectId,
+            details: { name: userResult.rows[0].name }
         });
 
         res.status(201).json({
@@ -309,21 +316,29 @@ export const addProjectMember = async (req,res) => {
 };
 
 
-export const removeProjectMember = async (req,res) => {
+export const removeProjectMember = async (req, res) => {
     const orgId = req.orgId;
-    const {projectId,userId} = req.params;
+    const { projectId, userId } = req.params;
 
-    try{   
-        await ensureNotLastManager(projectId, userId); 
-        const userResult = await pool.query(
-            `DELETE FROM project_members
-             WHERE project_id = $1 AND user_id = $2
-             RETURNING id`,
-             [projectId,userId]
+    try {
+        await ensureNotLastManager(projectId, userId);
+
+        const nameResult = await pool.query(
+            `SELECT name FROM user_details WHERE user_id = $1`,
+            [userId]
         );
 
-        if(userResult.rowCount === 0){
-            return res.status(404).json({message: "user not found in the organization"});
+        const userName = nameResult.rows[0]?.name || 'Unknown User';
+
+        const result = await pool.query(
+            `DELETE FROM project_members
+             WHERE project_id = $1 AND user_id = $2
+             RETURNING project_id`,
+            [projectId, userId]
+        );
+
+        if (result.rowCount === 0) {
+            return res.status(404).json({ message: "User not found in this project" });
         }
 
         await logAudit({
@@ -331,15 +346,17 @@ export const removeProjectMember = async (req,res) => {
             userId: req.user.userId,
             action: "REMOVE_PROJECT_MEMBER",
             entity: "PROJECT_MEMBER",
-            entityId: projectId
+            entityId: projectId,
+            details: { name: userName }
         });
 
-        res.status(201).json({
-            message: "member removed from the project"
+        res.status(200).json({
+            message: "Member removed from the project"
         });
-    }catch(err){
+
+    } catch (err) {
         console.error(err);
-        
+
         if (err.message === "CANNOT_REMOVE_LAST_MANAGER") {
             return res.status(400).json({
                 message: "Project must have at least one manager"
@@ -388,41 +405,51 @@ export const listProjectMembers = async (req, res) => {
 };
 
 
-export const updateProjectMemberRole = async (req,res) => {
-    const {projectId,userId} = req.params;
-    const {role} = req.body;
+export const updateProjectMemberRole = async (req, res) => {
+    const { projectId, userId } = req.params;
+    const { role } = req.body;
+    const orgId = req.orgId;
 
-    if(!role || !['MANAGER','MEMBER'].includes(role)){
-        return res.status(400).json({message: "valid data is required"});
+    if (!role || !['MANAGER', 'MEMBER'].includes(role)) {
+        return res.status(400).json({ message: "Valid role is required" });
     }
 
-    try{ 
+    try {
         if (role === 'MEMBER') {
             await ensureNotLastManager(projectId, userId);
         }
+
+        const nameResult = await pool.query(
+            `SELECT name FROM user_details WHERE user_id = $1`,
+            [userId]
+        );
+
+        const userName = nameResult.rows[0]?.name || 'Unknown User';
 
         const result = await pool.query(
             `UPDATE project_members
              SET role = $1
              WHERE project_id = $2 AND user_id = $3
-             RETURNING id`,
-             [role,projectId,userId]
+             RETURNING role`,
+            [role, projectId, userId]
         );
 
-        if(result.rowCount === 0){
-            return res.status(404).json({message: "project member not found"});
+        if (result.rowCount === 0) {
+            return res.status(404).json({ message: "Project member not found" });
         }
 
         await logAudit({
-            orgId: req.orgId,
+            orgId,
             userId: req.user.userId,
             action: "UPDATE_PROJECT_MEMBER_ROLE",
             entity: "PROJECT_MEMBER",
-            entityId: projectId
+            entityId: projectId,
+            details: { name: userName, role: role }
         });
 
-        res.json({message: "project member role updated"});
-    }catch(err){
+        res.json({ message: "Project member role updated" });
+
+    } catch (err) {
         console.error(err);
         res.status(500).json({
             message: "Failed to update project member role"

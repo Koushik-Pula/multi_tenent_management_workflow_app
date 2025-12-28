@@ -14,6 +14,7 @@ import ProfilePage from "./pages/profile/ProfilePage";
 import AcceptInvite from "./pages/AcceptInvite";
 
 import ProjectDetails from "./pages/projects/ProjectDetails";
+import MyTasks from "./pages/tasks/MyTasks";
 
 function App() {
     return (
@@ -37,7 +38,8 @@ function App() {
                         <Route path="/users" element={<UsersPage />} />
                         <Route path="/profile" element={<ProfilePage />} />
                         <Route path="/projects/:projectId" element={<ProjectDetails />} />
-                        
+                        <Route path="/my-tasks" element={<MyTasks />} />
+
                     </Route>
 
                     <Route path="*" element={<Navigate to="/" replace />} />

@@ -2,46 +2,60 @@ import pool from '../db/index.js';
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
 
-export const signup = async (req,res) => {
-    const {orgName,adminEmail,password} =  req.body;
-    if(!orgName || !adminEmail || !password){
-        return  res.status(400).json({message: 'All fields are required'});
-    }
+export const signup = async (req, res) => {
+    const { orgName, adminEmail, password } = req.body;
+
     const client = await pool.connect();
+    try {
+        await client.query("BEGIN");
 
-    try{
-        await client.query('BEGIN');
+        const hashedPassword = await bcrypt.hash(password, 10);
 
-        const slug = orgName.toLowerCase().replace(/\s+/g, '-');
-
-        const orgResult = await client.query(
-            `INSERT INTO organizations(name,slug)
-             VALUES($1,$2)
-             RETURNING id`,
-             [orgName,slug]
+        const orgRes = await client.query(
+            `
+            INSERT INTO organizations (name)
+            VALUES ($1)
+            RETURNING id
+            `,
+            [orgName]
         );
 
-        const orgId = orgResult.rows[0].id;
+        const orgId = orgRes.rows[0].id;
 
-        const hashedPassword = await bcrypt.hash(password,10);
+        const userRes = await client.query(
+            `
+            INSERT INTO users (org_id, email, password_hash, role)
+            VALUES ($1, $2, $3, 'ADMIN')
+            RETURNING id
+            `,
+            [orgId, adminEmail, hashedPassword]
+        );
+
+        const adminUserId = userRes.rows[0].id;
+        const defaultName = adminEmail.split("@")[0];
 
         await client.query(
-            `INSERT INTO users(org_id,email,password_hash,role)
-             VALUES($1,$2,$3,'ADMIN')
-             RETURNING id`,
-             [orgId,adminEmail,hashedPassword]
+            `
+            INSERT INTO user_details (user_id, name)
+            VALUES ($1, $2)
+            `,
+            [adminUserId, defaultName]
         );
 
-        await client.query('COMMIT');
-        res.status(200).json({message: 'Organization and admin user created successfully'});
-    }catch (err){
-        await client.query('ROLLBACK');
+        await client.query("COMMIT");
+
+        res.status(201).json({
+            message: "Organization and admin created successfully"
+        });
+    } catch (err) {
+        await client.query("ROLLBACK");
         console.error(err);
-        res.status(500).json({error:"signup failed"});
-    }finally{
+        res.status(500).json({ message: "Signup failed" });
+    } finally {
         client.release();
     }
 };
+
 
 export const login = async (req,res) =>{
     const {email,password} = req.body;
@@ -170,6 +184,52 @@ export const refresh = async(req,res) => {
         res.status(401).json({error: 'Could not refresh access token'});
     }
 };
+
+export const me = async (req, res) => {
+    // 1. Log this to verify (Optional debugging step)
+    // console.log("Decoded User from Token:", req.user); 
+
+    const result = await pool.query(
+        `
+        SELECT
+            u.id,
+            u.email,
+            u.role,
+            u.org_id,
+            d.name,
+            d.avatar_url,
+            d.job_title,
+            d.timezone
+        FROM users u
+        LEFT JOIN user_details d ON d.user_id = u.id  -- Changed to LEFT JOIN (see note below)
+        WHERE u.id = $1
+        `,
+        [req.user.userId] // <--- CHANGE THIS from .id to .userId
+    );
+
+    if (result.rowCount === 0) {
+        return res.status(404).json({
+            message: "User profile not found"
+        });
+    }
+
+    const user = result.rows[0];
+
+    res.json({
+        id: user.id,
+        email: user.email,
+        role: user.role,
+        orgId: user.org_id,
+        // Handle potential nulls if user_details is missing
+        name: user.name || "", 
+        avatar_url: user.avatar_url || "",
+        job_title: user.job_title || "",
+        timezone: user.timezone || ""
+    });
+};
+
+
+
 
 export const logout = async (req,res) => {
     const {refreshToken} = req.body;

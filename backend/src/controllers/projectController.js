@@ -31,7 +31,7 @@ export const createProject = async(req,res)=> {
         await client.query(
             `INSERT INTO project_members(project_id,user_id,role)
              VALUES($1,$2,'MANAGER')`,
-             [projectId,userId]
+             [project.id,userId]
         );
 
         await logAudit({
@@ -39,7 +39,7 @@ export const createProject = async(req,res)=> {
             userId,
             action: 'CREATE_PROJECT',
             entity: 'PROJECT',
-            entityId: projectId
+            entityId: project.id
         });
 
         await client.query('COMMIT');
@@ -54,47 +54,57 @@ export const createProject = async(req,res)=> {
     }
 };
 
-export const listProjects = async(req,res)=> {
-    const orgId = req.orgId;
+export const listProjects = async (req, res) => {
+    const limit = parseInt(req.query.limit) || 20;
+    const offset = parseInt(req.query.offset) || 0;
 
-    try{
-        const result = await pool.query(
-            `SELECT id,name,description,is_archived,created_at
-             FROM projects
-             WHERE org_id = $1
-             ORDER BY created_at DESC`,
-             [orgId]
-        );
+    const result = await pool.query(
+        `
+        SELECT
+            p.id,
+            p.name,
+            p.description,
+            p.created_at,
+            p.created_by,
+            ud.name AS created_by_name
+        FROM projects p
+        JOIN user_details ud ON ud.user_id = p.created_by
+        WHERE p.org_id = $1
+        ORDER BY p.created_at DESC
+        LIMIT $2 OFFSET $3
+        `,
+        [req.org.id, limit, offset]
+    );
 
-        res.json(result.rows);
-    }catch(err){
-        console.error(err);
-        res.status(500).json({message: "Failed to fetch projects"});
-    }
+    res.json({
+        data: result.rows,
+        meta: { limit, offset }
+    });
 };
 
-export const getProjectById = async(req,res)=> {
-    const orgId = req.orgId;
-    const {projectId} = req.params;
 
-    try{
-        const result = await pool.query(
-            `SELECT id,name,description,is_archived,created_by,created_at
-             FROM projects
-             WHERE id = $1 AND org_id = $2`,
-             [projectId,orgId]
-        );
 
-        if(result.rows.length === 0){
-            return res.status(404).json({message: "project not found"});
-        }
+export const getProjectById = async (req, res) => {
+    const result = await pool.query(
+        `
+        SELECT
+            p.*,
+            ud.name AS created_by_name
+        FROM projects p
+        JOIN user_details ud ON ud.user_id = p.created_by
+        WHERE p.id = $1
+          AND p.org_id = $2
+        `,
+        [req.params.projectId, req.org.id]
+    );
 
-        res.json(result.rows[0]);
-    }catch(err){
-        console.error(err);
-        res.status(500).json({message: "couldn't get projects"});
+    if (result.rowCount === 0) {
+        return res.status(404).json({ message: "Project not found" });
     }
+
+    res.json(result.rows[0]);
 };
+
 
 export const updateProject = async(req,res) => {
     const orgId = req.orgId;
@@ -220,7 +230,6 @@ export const addProjectMember = async (req,res) => {
     }
 
     try{  
-        await ensureNotLastManager(projectId, userId); 
 
         const userResult = await pool.query(
             `SELECT id FROM users
@@ -289,12 +298,7 @@ export const removeProjectMember = async (req,res) => {
         });
     }catch(err){
         console.error(err);
-        if (err.message === "CANNOT_REMOVE_LAST_ADMIN") {
-            return res.status(400).json({
-                message: "Organization must have at least one admin"
-            });
-        }
-
+        
         if (err.message === "CANNOT_REMOVE_LAST_MANAGER") {
             return res.status(400).json({
                 message: "Project must have at least one manager"
@@ -307,25 +311,30 @@ export const removeProjectMember = async (req,res) => {
     }
 };
 
-export const listProjectMembers = async (req,res) => {
-    const {projectId} = req.params;
-    
-    try{
-        const result = await pool.query(
-            `SELECT u.id, u.email, pm.role, pm.added_at
-             FROM project_members pm 
-             JOIN users u ON u.id = pm.user_id
-             WHERE pm.project_id = $1 AND p.org_id = $2
-             ORDER BY pm.added_at ASC`,
-             [projectId,req.orgId]
-        );
+export const listProjectMembers = async (req, res) => {
+    const { projectId } = req.params;
+    const orgId = req.orgId;
+    let { limit = 20, offset = 0 } = req.query;
 
-        res.json(result.rows);
-    }catch(err){
-        console.error(err);
-        res.status(500).json({message: "Failed to fetch project members"});
-    }
+    limit = Math.min(Number(limit) || 20, 100);
+    offset = Number(offset) || 0;
+
+    const result = await pool.query(
+        `SELECT u.id, u.email, pm.role, u.is_active
+         FROM project_members pm
+         JOIN users u ON u.id = pm.user_id
+         WHERE pm.project_id = $1 AND u.org_id = $2
+         ORDER BY u.created_at DESC
+         LIMIT $3 OFFSET $4`,
+        [projectId, orgId, limit, offset]
+    );
+
+    res.json({
+        data: result.rows,
+        meta: { limit, offset, count: result.rows.length }
+    });
 };
+
 
 export const updateProjectMemberRole = async (req,res) => {
     const {projectId,userId} = req.params;
@@ -336,7 +345,10 @@ export const updateProjectMemberRole = async (req,res) => {
     }
 
     try{ 
-        await ensureNotLastManager(projectId, userId); 
+        if (role === 'MEMBER') {
+            await ensureNotLastManager(projectId, userId);
+        }
+
         const result = await pool.query(
             `UPDATE project_members
              SET role = $1

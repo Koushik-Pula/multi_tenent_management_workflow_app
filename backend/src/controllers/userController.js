@@ -1,17 +1,18 @@
 import pool from '../db/index.js';
 import crypto from 'crypto';
 import bcrypt from 'bcrypt';
-
 import { ensureNotLastAdmin } from '../guards/orgGuards.js';
 
+
+
 export const createInvite = async (req,res)=>{
+
     const {email,role} = req.body;
     const orgId = req.orgId;
 
     if(!email || !role){
         return res.status(400).json({message:"email and role are required"});
     }
-
     if(!["ADMIN","MEMBER"].includes(role)){
         return res.status(400).json({message:"invalid role"});
     }
@@ -54,100 +55,106 @@ export const createInvite = async (req,res)=>{
     }
 };
 
-export const acceptInvite = async (req,res) =>{
-    const {token,password} = req.body;
-
-    if(!token || !password){
-        return res.status(400).json({message: 'Token and password are required'});
-    }
+export const acceptInvite = async (req, res) => {
+    // ... (Keep your existing acceptInvite code) ...
+    const { token, password } = req.body;
 
     const client = await pool.connect();
+    try {
+        await client.query("BEGIN");
 
-    try{
-        await client.query('BEGIN');
-
-        const inviteResult = await client.query(
-            `SELECT id,org_id,email,role,expires_at,accepted_at
-             FROM invites
-             WHERE token = $1`,
-             [token]
-        )
-
-        if(inviteResult.rows.length === 0){
-            await client.query('ROLLBACK');
-            return res.status(400).json({message: "invalid invite token"});
-        }
-
-        const invite = inviteResult.rows[0];
-
-        if(invite.accepted_at){
-            await client.query('ROLLBACK');
-            return res.status(400).json({message: "invite already used"});
-        }
-
-        if(new Date(invite.expires_at) < new Date()){
-            await client.query('ROLLBACK');
-            return res.status(400).json({message: "invite token expired"});
-        }
-
-
-        const existingUser = await client.query(
-            `SELECT id FROM users WHERE email = $1`,
-            [invite.email]
+        const inviteRes = await client.query(
+            `
+            SELECT *
+            FROM invites
+            WHERE token = $1
+              AND used = false
+              AND expires_at > NOW()
+            `,
+            [token]
         );
-        if (existingUser.rows.length > 0) {
-            await client.query("ROLLBACK");
-            return res.status(409).json({ message: "User already exists" });
+
+        if (inviteRes.rowCount === 0) {
+            throw new Error("Invalid or expired invite");
         }
 
-        const passwordHash = await bcrypt.hash(password,10);
+        const invite = inviteRes.rows[0];
 
+        const passwordHash = await bcrypt.hash(password, 10);
+
+        const userInsert = await client.query(
+            `
+            INSERT INTO users (org_id, email, password_hash, role)
+            VALUES ($1, $2, $3, $4)
+            RETURNING id
+            `,
+            [invite.org_id, invite.email, passwordHash, invite.role]
+        );
+
+        const userId = userInsert.rows[0].id;
+        const defaultName = invite.email.split("@")[0];
 
         await client.query(
-            `INSERT INTO users(org_id,email,password_hash,role)
-             VALUES($1,$2,$3,$4)`,
-             [invite.org_id,invite.email,passwordHash,invite.role]
-        )
+            `
+            INSERT INTO user_details (user_id, name)
+            VALUES ($1, $2)
+            `,
+            [userId, defaultName]
+        );
 
         await client.query(
-            `UPDATE invites
-             SET accepted_at = NOW()
-             WHERE id = $1`,
-             [invite.id]
-        )
+            `
+            UPDATE invites
+            SET used = true
+            WHERE id = $1
+            `,
+            [invite.id]
+        );
 
-        await client.query('COMMIT');
-        res.status(201).json({message: 'Invite accepted and user created successfully'});
-    }catch (err){
-        await client.query('ROLLBACK');
-        console.error(err);
-        res.status(500).json({message: 'Failed to accept invite'});
-    }finally{
+        await client.query("COMMIT");
+
+        res.json({ message: "Invite accepted successfully" });
+    } catch (err) {
+        await client.query("ROLLBACK");
+        res.status(400).json({ message: err.message });
+    } finally {
         client.release();
     }
 };
 
-export const listUsers = async (req,res) => {
-    const orgId = req.orgId;
-    try{
-        const userList = await pool.query(
-            `SELECT id,email,role,is_active,created_at FROM users
-             WHERE org_id = $1
-             ORDER BY created_at ASC`,
-             [orgId]
-        );
-        res.json(userList.rows);
-    }catch(err){
-        console.error(err);
-        res.status(500).json({message: "failed to fetch users"});
-    }
+export const listUsers = async (req, res) => {
+    const limit = parseInt(req.query.limit) || 20;
+    const offset = parseInt(req.query.offset) || 0;
+    const orgId = req.orgId; // FIXED: Changed from req.org.id to req.orgId
+
+    const result = await pool.query(
+        `
+        SELECT
+            u.id,
+            u.email,
+            u.role,
+            u.is_active,
+            d.name
+        FROM users u
+        LEFT JOIN user_details d ON d.user_id = u.id  -- FIXED: Changed JOIN to LEFT JOIN
+        WHERE u.org_id = $1
+        ORDER BY d.name
+        LIMIT $2 OFFSET $3
+        `,
+        [orgId, limit, offset]
+    );
+
+    res.json({
+        data: result.rows,
+        meta: { limit, offset }
+    });
 };
 
 export const updateUserRole = async(req,res) => {
     const orgId = req.orgId;
     const {userId} = req.params;
     const {role} = req.body;
-    const currentUserId = req.user.userId;
+    const currentUserId = req.user.userId; // FIXED: Ensure this matches token
 
     if(!role){
         return res.status(400).json({message: "role is required"});
@@ -195,7 +202,7 @@ export const deactivateUser = async(req,res) =>{
     }
 
     try{
-        await ensureNotLastAdmin(orgId,UserId);
+        await ensureNotLastAdmin(orgId,userId);
         const result = await pool.query(
             `UPDATE users
              SET is_active = false
@@ -259,3 +266,39 @@ export const reactivateUser = async(req,res) =>{
         });
     }
 }
+
+export const getMyProfile = async (req, res) => {
+    const result = await pool.query(
+        `
+        SELECT
+            name,
+            avatar_url,
+            job_title,
+            timezone
+        FROM user_details
+        WHERE user_id = $1
+        `,
+        [req.user.userId] 
+    );
+
+    res.json(result.rows[0]);
+};
+
+export const updateMyProfile = async (req, res) => {
+    const { name, avatar_url, job_title, timezone } = req.body;
+
+    await pool.query(
+        `
+        UPDATE user_details
+        SET
+            name = COALESCE($1, name),
+            avatar_url = COALESCE($2, avatar_url),
+            job_title = COALESCE($3, job_title),
+            timezone = COALESCE($4, timezone)
+        WHERE user_id = $5
+        `,
+        [name, avatar_url, job_title, timezone, req.user.userId] 
+    );
+
+    res.json({ message: "Profile updated" });
+};

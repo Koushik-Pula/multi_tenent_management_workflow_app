@@ -3,83 +3,103 @@ import { logAudit } from '../utils/auditLogger.js';
 
 import { isValidTaskTransition } from '../workflows/taskworkflow.js';
 
-export const createTask = async(req,res) => {
-    const {projectId} = req.params;
+export const createTask = async (req, res) => {
     const orgId = req.orgId;
-    const {title,description,priority,due_date} = req.body;
+    const { projectId } = req.params;
+    const { title, description, priority, due_date } = req.body;
 
-    if(!title){
-        return res.status(400).json({message: "title is required"});
-    }
-
-    try{  
-
+    try {
         const result = await pool.query(
-            `INSERT INTO tasks (org_id,project_id,title,description,priority,due_date)
-             VALUES($1,$2,$3,$4,$5,$6)
-             RETURNING id,title,status,priority,due_date,created_at`,
-             [orgId,projectId,title,description || null,priority || 3,due_date || null]
-        )
-
-        await logAudit({
-            orgId,
-            userId: req.user.userId,
-            action: "CREATE_TASK",
-            entity: "TASK",
-            entityId: result.rows[0].id
-        });
+            `
+            INSERT INTO tasks (
+                org_id,
+                project_id,
+                title,
+                description,
+                priority,
+                due_date,
+                created_by
+            )
+            VALUES ($1,$2,$3,$4,$5,$6,$7)
+            RETURNING id,title,status,priority,due_date,created_at
+            `,
+            [
+                orgId,
+                projectId,
+                title,
+                description || null,
+                priority || 3,
+                due_date || null,
+                req.user.userId
+            ]
+        );
 
         res.status(201).json(result.rows[0]);
-    }catch(err){
+    } catch (err) {
         console.error(err);
-        res.status(500).json({
-            message: "Failed to create task"
-        });
+        res.status(500).json({ message: "Failed to create task" });
     }
 };
 
-export const listTasks = async (req,res) => {
-    const {projectId} = req.params;
-    const orgId = req.orgId;
 
-    try{
-        const result = await pool.query(
-            `SELECT id,title,status,priority,assigned_to,due_date,created_at
-             FROM tasks
-             WHERE org_id = $1 AND project_id = $2
-             ORDER BY created_at DESC`,
-             [orgId,projectId]
-        );
+export const listTasks = async (req, res) => {
+    const limit = parseInt(req.query.limit) || 20;
+    const offset = parseInt(req.query.offset) || 0;
 
-        res.json(result.rows);
-    }catch(err){
-        console.error(err);
-        res.status(500).json({message: "failed to fetch tasks"});
+    const result = await pool.query(
+        `
+        SELECT
+            t.id,
+            t.title,
+            t.status,
+            t.created_at,
+            t.assigned_to,
+            assignee.name AS assigned_to_name,
+            creator.name AS created_by_name
+        FROM tasks t
+        LEFT JOIN user_details assignee
+            ON assignee.user_id = t.assigned_to
+        JOIN user_details creator
+            ON creator.user_id = t.created_by
+        WHERE t.project_id = $1
+        ORDER BY t.created_at DESC
+        LIMIT $2 OFFSET $3
+        `,
+        [req.params.projectId, limit, offset]
+    );
+
+    res.json({
+        data: result.rows,
+        meta: { limit, offset }
+    });
+};
+
+
+
+export const getTaskById = async (req, res) => {
+    const result = await pool.query(
+        `
+        SELECT
+            t.*,
+            assignee.name AS assigned_to_name,
+            creator.name AS created_by_name
+        FROM tasks t
+        LEFT JOIN user_details assignee
+            ON assignee.user_id = t.assigned_to
+        JOIN user_details creator
+            ON creator.user_id = t.created_by
+        WHERE t.id = $1
+        `,
+        [req.params.taskId]
+    );
+
+    if (result.rowCount === 0) {
+        return res.status(404).json({ message: "Task not found" });
     }
-}
 
-export const getTaskById = async(req,res) => {
-    const {projectId,taskId} = req.params;
-    const orgId = req.orgId;
+    res.json(result.rows[0]);
+};
 
-    try{
-        const result = await pool.query(
-            `SELECT id,title,description,status,priority,assigned_to,due_date,created_at
-             FROM tasks
-             WHERE id = $1 AND project_id = $2 AND org_id = $3`,
-             [taskId,projectId,orgId]
-        );
-
-        if(result.rows.length === 0){
-            return res.status(404).json({message: "task not found"});
-        }
-
-        res.json(result.rows[0]);
-    }catch(err){
-        console.error(err);
-        res.status(500).json({message: "failed to fetch tasks"});
-    }
-}
 
 export const assignTask = async(req,res) => {
     const {projectId,taskId} = req.params;

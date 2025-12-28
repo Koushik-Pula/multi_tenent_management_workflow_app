@@ -1,33 +1,45 @@
-import { useState } from 'react'
+import { BrowserRouter as Router, Routes, Route, Navigate, Outlet } from "react-router-dom";
 
+import { AuthProvider } from "./auth/AuthContext";
+import ProtectedRoute from "./components/common/ProtectedRoute";
+
+import Login from "./pages/Login";
+import Signup from "./pages/Signup";
+
+import DashboardLayout from "./components/dashboard/DashboardLayout";
+
+import Dashboard from "./pages/Dashboard";
+
+import UsersPage from "./pages/users/UsersPage";
+import ProfilePage from "./pages/profile/ProfilePage";
 
 function App() {
-  const [count, setCount] = useState(0)
+    return (
+        <Router>
+            <AuthProvider>
+                <Routes>
+                    <Route path="/login" element={<Login />} />
+                    <Route path="/signup" element={<Signup />} />
 
-  return (
-    <>
-      <div>
-        <a href="https://vite.dev" target="_blank">
-          <img src={viteLogo} className="logo" alt="Vite logo" />
-        </a>
-        <a href="https://react.dev" target="_blank">
-          <img src={reactLogo} className="logo react" alt="React logo" />
-        </a>
-      </div>
-      <h1>Vite + React</h1>
-      <div className="card">
-        <button onClick={() => setCount((count) => count + 1)}>
-          count is {count}
-        </button>
-        <p>
-          Edit <code>src/App.jsx</code> and save to test HMR
-        </p>
-      </div>
-      <p className="read-the-docs">
-        Click on the Vite and React logos to learn more
-      </p>
-    </>
-  )
+                    <Route
+                        element={
+                            <ProtectedRoute>
+                                <DashboardLayout>
+                                    <Outlet />
+                                </DashboardLayout>
+                            </ProtectedRoute>
+                        }
+                    >
+                        <Route path="/" element={<Dashboard />} />
+                        <Route path="/users" element={<UsersPage />} />
+                        <Route path="/profile" element={<ProfilePage />} />
+                    </Route>
+
+                    <Route path="*" element={<Navigate to="/" replace />} />
+                </Routes>
+            </AuthProvider>
+        </Router>
+    );
 }
 
-export default App
+export default App;

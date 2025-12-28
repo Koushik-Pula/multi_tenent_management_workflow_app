@@ -1,105 +1,132 @@
 import pool from '../db/index.js';
 
-export const getAuditLogs = async(req,res) => {
+export const getAuditLogs = async (req, res) => {
     const orgId = req.orgId;
 
-    const {
+    let {
         entity,
         action,
         userId,
         startDate,
         endDate,
         limit = 20,
-        offset = 0,
+        offset = 0
     } = req.query;
 
-    try{
-        const conditions = ["org_id = $1"];
-        const values = {orgId};
+    const safeLimit = Math.min(Number(limit) || 20, 100);
+    const safeOffset = Number(offset) || 0;
+
+    try {
+        const conditions = ["a.org_id = $1"];
+        const values = [orgId];
         let idx = 2;
 
-        if(entity){
-            conditions.push("entity = $${idx++}");
+        if (entity) {
+            conditions.push(`a.entity = $${idx++}`);
             values.push(entity);
         }
 
         if (action) {
-            conditions.push(`action = $${idx++}`);
+            conditions.push(`a.action = $${idx++}`);
             values.push(action);
         }
 
         if (userId) {
-            conditions.push(`user_id = $${idx++}`);
+            conditions.push(`a.user_id = $${idx++}`);
             values.push(userId);
         }
 
         if (startDate) {
-            conditions.push(`created_at >= $${idx++}`);
+            conditions.push(`a.created_at >= $${idx++}`);
             values.push(startDate);
         }
 
         if (endDate) {
-            conditions.push(`created_at <= $${idx++}`);
+            conditions.push(`a.created_at <= $${idx++}`);
             values.push(endDate);
         }
 
         const query = `
-            SELECT id, user_id, action, entity, entity_id, created_at
-            FROM audit_logs
+            SELECT
+                a.id,
+                a.user_id,
+                ud.name AS user_name,
+                a.action,
+                a.entity,
+                a.entity_id,
+                a.created_at
+            FROM audit_logs a
+            JOIN user_details ud ON ud.user_id = a.user_id
             WHERE ${conditions.join(" AND ")}
-            ORDER BY created_at DESC
+            ORDER BY a.created_at DESC
             LIMIT $${idx++} OFFSET $${idx}
         `;
 
-        values.push(limit, offset);
+        values.push(safeLimit, safeOffset);
 
         const result = await pool.query(query, values);
 
         res.json({
             data: result.rows,
             meta: {
-                limit: Number(limit),
-                offset: Number(offset),
+                limit: safeLimit,
+                offset: safeOffset,
                 count: result.rows.length
             }
         });
-    }catch(err){
+    } catch (err) {
         console.error(err);
-        res.status(500).json({
-            message: "failed to fetch audit logs"
-        });
+        res.status(500).json({ message: "Failed to fetch audit logs" });
     }
 };
+
+
+
 
 
 export const getProjectAuditLogs = async (req, res) => {
     const { projectId } = req.params;
     const orgId = req.orgId;
 
-    const { limit = 20, offset = 0 } = req.query;
+    let { limit = 20, offset = 0 } = req.query;
+
+    const safeLimit = Math.min(Number(limit) || 20, 100);
+    const safeOffset = Number(offset) || 0;
 
     try {
         const result = await pool.query(
-            `SELECT id, user_id, action, entity, entity_id, created_at
-             FROM audit_logs
-             WHERE org_id = $1 AND entity_id = $2
-             ORDER BY created_at DESC
-             LIMIT $3 OFFSET $4`,
-            [orgId, projectId, limit, offset]
+            `
+            SELECT
+                a.id,
+                a.user_id,
+                ud.name AS user_name,
+                a.action,
+                a.entity,
+                a.entity_id,
+                a.created_at
+            FROM audit_logs a
+            JOIN user_details ud ON ud.user_id = a.user_id
+            WHERE a.org_id = $1
+              AND a.entity = 'PROJECT'
+              AND a.entity_id = $2
+            ORDER BY a.created_at DESC
+            LIMIT $3 OFFSET $4
+            `,
+            [orgId, projectId, safeLimit, safeOffset]
         );
 
         res.json({
             data: result.rows,
             meta: {
-                limit: Number(limit),
-                offset: Number(offset),
+                limit: safeLimit,
+                offset: safeOffset,
                 count: result.rows.length
             }
         });
     } catch (err) {
         console.error(err);
-        res.status(500).json({
-            message: "Failed to fetch project audit logs"
-        });
+        res.status(500).json({ message: "Failed to fetch project audit logs" });
     }
 };
+
+

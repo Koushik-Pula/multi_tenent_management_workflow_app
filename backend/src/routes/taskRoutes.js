@@ -2,11 +2,11 @@ import express from 'express';
 
 import { attachOrg } from '../middlewares/orgMiddleware.js';
 import { authenticate } from '../middlewares/authMiddleware.js';
-import {requireProjectRole} from '../middlewares/rbacMiddleware.js';
+import {requireProjectRole} from '../middlewares/projectRbacMiddleware.js';
 import { requireAdminOrProjectRole } from "../middlewares/requireAdminOrProjectRole.js";
 import { ensureProjectIsActive } from '../middlewares/ensureProjectIsActive.js';
 
-import { assignTask, createTask, deleteTask, getTaskById, listTasks, unassignTask, updateTask, updateTaskStatus } from '../controllers/taskController';
+import { assignTask, createTask, deleteTask, getTaskById, listTasks, unassignTask, updateTask, updateTaskStatus } from '../controllers/taskController.js';
 
 const router = express.Router();
 

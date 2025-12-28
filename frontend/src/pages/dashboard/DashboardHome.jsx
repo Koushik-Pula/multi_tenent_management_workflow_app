@@ -1,11 +1,13 @@
-import DashboardLayout from "../../components/dashboard/DashboardLayout";
+import { useAuth } from "../../auth/AuthContext";
+import AdminDashboard from "./AdminDashboard";
+import MemberDashboard from "./MemberDashboard";
 
 export default function DashboardHome() {
-    return (
-        <DashboardLayout>
-            <h2 className="text-2xl font-semibold">
-                Welcome to your organization
-            </h2>
-        </DashboardLayout>
-    );
+    const { user } = useAuth();
+
+    if (user?.role === "ADMIN") {
+        return <AdminDashboard />;
+    }
+
+    return <MemberDashboard />;
 }

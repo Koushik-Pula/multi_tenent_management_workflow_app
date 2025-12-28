@@ -57,29 +57,68 @@ export const createProject = async(req,res)=> {
 export const listProjects = async (req, res) => {
     const limit = parseInt(req.query.limit) || 20;
     const offset = parseInt(req.query.offset) || 0;
+    
+    // We need these from the authenticated user
+    const userId = req.user.userId;
+    const userRole = req.user.role; 
+    const orgId = req.orgId;
 
-    const result = await pool.query(
-        `
-        SELECT
-            p.id,
-            p.name,
-            p.description,
-            p.created_at,
-            p.created_by,
-            ud.name AS created_by_name
-        FROM projects p
-        JOIN user_details ud ON ud.user_id = p.created_by
-        WHERE p.org_id = $1
-        ORDER BY p.created_at DESC
-        LIMIT $2 OFFSET $3
-        `,
-        [req.org.id, limit, offset]
-    );
+    try {
+        let query;
+        let params;
 
-    res.json({
-        data: result.rows,
-        meta: { limit, offset }
-    });
+        if (userRole === 'ADMIN') {
+            // --- 1. ADMIN QUERY: Show ALL projects in the Org ---
+            query = `
+                SELECT
+                    p.id,
+                    p.name,
+                    p.description,
+                    p.created_at,
+                    p.created_by,
+                    ud.name AS created_by_name,
+                    (SELECT COUNT(*) FROM project_members pm WHERE pm.project_id = p.id) as member_count
+                FROM projects p
+                LEFT JOIN user_details ud ON ud.user_id = p.created_by
+                WHERE p.org_id = $1
+                ORDER BY p.created_at DESC
+                LIMIT $2 OFFSET $3
+            `;
+            params = [orgId, limit, offset];
+        } else {
+            // --- 2. MEMBER QUERY: Show ONLY projects they are in ---
+            query = `
+                SELECT
+                    p.id,
+                    p.name,
+                    p.description,
+                    p.created_at,
+                    p.created_by,
+                    ud.name AS created_by_name,
+                    (SELECT COUNT(*) FROM project_members pm WHERE pm.project_id = p.id) as member_count
+                FROM projects p
+                -- Join with project_members to filter permissions
+                INNER JOIN project_members pm_check ON p.id = pm_check.project_id
+                LEFT JOIN user_details ud ON ud.user_id = p.created_by
+                WHERE p.org_id = $1 
+                  AND pm_check.user_id = $2 -- Only projects where THIS user is a member
+                ORDER BY p.created_at DESC
+                LIMIT $3 OFFSET $4
+            `;
+            // Note parameter order: orgId ($1), userId ($2), limit ($3), offset ($4)
+            params = [orgId, userId, limit, offset];
+        }
+
+        const result = await pool.query(query, params);
+
+        res.json({
+            data: result.rows,
+            meta: { limit, offset }
+        });
+    } catch (err) {
+        console.error("List Projects Error:", err);
+        res.status(500).json({ message: "Failed to list projects" });
+    }
 };
 
 
@@ -95,7 +134,7 @@ export const getProjectById = async (req, res) => {
         WHERE p.id = $1
           AND p.org_id = $2
         `,
-        [req.params.projectId, req.org.id]
+        [req.params.projectId, req.orgId]
     );
 
     if (result.rowCount === 0) {

@@ -6,7 +6,9 @@ import { isValidTaskTransition } from '../workflows/taskworkflow.js';
 export const createTask = async (req, res) => {
     const orgId = req.orgId;
     const { projectId } = req.params;
-    const { title, description, priority, due_date } = req.body;
+    
+    // 1. Get all fields, including assigned_to
+    const { title, description, priority, due_date, assigned_to } = req.body; 
 
     try {
         const result = await pool.query(
@@ -18,10 +20,11 @@ export const createTask = async (req, res) => {
                 description,
                 priority,
                 due_date,
-                created_by
+                created_by,
+                assigned_to  -- 8th Column
             )
-            VALUES ($1,$2,$3,$4,$5,$6,$7)
-            RETURNING id,title,status,priority,due_date,created_at
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8) -- 8 Placeholders
+            RETURNING id, title, status, priority, due_date, created_at, assigned_to
             `,
             [
                 orgId,
@@ -30,48 +33,58 @@ export const createTask = async (req, res) => {
                 description || null,
                 priority || 3,
                 due_date || null,
-                req.user.userId
+                req.user.userId,
+                assigned_to || null // 8th Value
             ]
         );
 
         res.status(201).json(result.rows[0]);
     } catch (err) {
-        console.error(err);
+        console.error("Task Creation Error:", err); // <--- CHECK TERMINAL FOR THIS
         res.status(500).json({ message: "Failed to create task" });
     }
 };
 
 
+// server/controllers/taskController.js
+
 export const listTasks = async (req, res) => {
     const limit = parseInt(req.query.limit) || 20;
     const offset = parseInt(req.query.offset) || 0;
 
-    const result = await pool.query(
-        `
-        SELECT
-            t.id,
-            t.title,
-            t.status,
-            t.created_at,
-            t.assigned_to,
-            assignee.name AS assigned_to_name,
-            creator.name AS created_by_name
-        FROM tasks t
-        LEFT JOIN user_details assignee
-            ON assignee.user_id = t.assigned_to
-        JOIN user_details creator
-            ON creator.user_id = t.created_by
-        WHERE t.project_id = $1
-        ORDER BY t.created_at DESC
-        LIMIT $2 OFFSET $3
-        `,
-        [req.params.projectId, limit, offset]
-    );
+    try {
+        const result = await pool.query(
+            `
+            SELECT
+                t.id,
+                t.title,
+                t.status,
+                t.created_at,
+                t.assigned_to,
+                t.description,
+                t.priority,
+                t.due_date,
 
-    res.json({
-        data: result.rows,
-        meta: { limit, offset }
-    });
+                assignee.name AS assigned_to_name,
+                creator.name AS created_by_name
+            FROM tasks t
+            LEFT JOIN user_details assignee ON assignee.user_id = t.assigned_to
+            LEFT JOIN user_details creator ON creator.user_id = t.created_by
+            WHERE t.project_id = $1
+            ORDER BY t.created_at DESC
+            LIMIT $2 OFFSET $3
+            `,
+            [req.params.projectId, limit, offset]
+        );
+
+        res.json({
+            data: result.rows,
+            meta: { limit, offset }
+        });
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ message: "Failed to list tasks" });
+    }
 };
 
 

@@ -1,5 +1,5 @@
 import express from 'express';
-import { createInvite,acceptInvite,listUsers, updateUserRole, deactivateUser, reactivateUser, getMyProfile,updateMyProfile} from '../controllers/userController.js';
+import { createInvite,acceptInvite,listUsers, updateUserRole, deactivateUser, reactivateUser, getMyProfile,updateMyProfile,getDashboardStats} from '../controllers/userController.js';
 
 //middleware imports
 import { attachOrg } from '../middlewares/orgMiddleware.js';
@@ -17,6 +17,7 @@ router.patch("/:userId/deactivate",authenticate,attachOrg,requireRole(['ADMIN'])
 router.patch("/:userId/reactivate",authenticate,attachOrg,requireRole(['ADMIN']),reactivateUser);
 router.get("/me/profile", authenticate, attachOrg, getMyProfile);
 router.patch("/me/profile", authenticate, attachOrg, updateMyProfile);
+router.get("/stats", authenticate, attachOrg, getDashboardStats);
 
 
 export default router;

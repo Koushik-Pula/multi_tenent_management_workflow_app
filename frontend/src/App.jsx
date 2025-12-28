@@ -8,10 +8,12 @@ import Signup from "./pages/Signup";
 
 import DashboardLayout from "./components/dashboard/DashboardLayout";
 
-import Dashboard from "./pages/Dashboard";
-
+import DashboardHome from "./pages/dashboard/DashboardHome";
 import UsersPage from "./pages/users/UsersPage";
 import ProfilePage from "./pages/profile/ProfilePage";
+import AcceptInvite from "./pages/AcceptInvite";
+
+import ProjectDetails from "./pages/projects/ProjectDetails";
 
 function App() {
     return (
@@ -20,6 +22,7 @@ function App() {
                 <Routes>
                     <Route path="/login" element={<Login />} />
                     <Route path="/signup" element={<Signup />} />
+                    <Route path="/accept-invite" element={<AcceptInvite />} />
 
                     <Route
                         element={
@@ -30,9 +33,11 @@ function App() {
                             </ProtectedRoute>
                         }
                     >
-                        <Route path="/" element={<Dashboard />} />
+                        <Route path="/" element={<DashboardHome />} />
                         <Route path="/users" element={<UsersPage />} />
                         <Route path="/profile" element={<ProfilePage />} />
+                        <Route path="/projects/:projectId" element={<ProjectDetails />} />
+                        
                     </Route>
 
                     <Route path="*" element={<Navigate to="/" replace />} />

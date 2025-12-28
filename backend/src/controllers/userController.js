@@ -303,3 +303,36 @@ export const updateMyProfile = async (req, res) => {
 
     res.json({ message: "Profile updated" });
 };
+
+export const getDashboardStats = async (req, res) => {
+    const orgId = req.orgId;
+
+    try {
+        // 1. Count ALL users in the Organization
+        const usersRes = await pool.query(
+            `SELECT COUNT(*) FROM users WHERE org_id = $1`, 
+            [orgId]
+        );
+
+        // 2. Count Projects
+        const projectsRes = await pool.query(
+            `SELECT COUNT(*) FROM projects WHERE org_id = $1`, 
+            [orgId]
+        );
+
+        // 3. Count Active Tasks (Optional)
+        const tasksRes = await pool.query(
+            `SELECT COUNT(*) FROM tasks WHERE org_id = $1 AND status != 'DONE'`, 
+            [orgId]
+        );
+
+        res.json({
+            employees: parseInt(usersRes.rows[0].count),
+            projects: parseInt(projectsRes.rows[0].count),
+            activeTasks: parseInt(tasksRes.rows[0].count)
+        });
+    } catch (err) {
+        console.error("Stats Error:", err);
+        res.status(500).json({ message: "Failed to fetch stats" });
+    }
+};

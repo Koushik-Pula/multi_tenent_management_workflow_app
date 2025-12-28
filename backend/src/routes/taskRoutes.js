@@ -6,7 +6,7 @@ import {requireProjectRole} from '../middlewares/projectRbacMiddleware.js';
 import { requireAdminOrProjectRole } from "../middlewares/requireAdminOrProjectRole.js";
 import { ensureProjectIsActive } from '../middlewares/ensureProjectIsActive.js';
 
-import { assignTask, createTask, deleteTask, getTaskById, listTasks, unassignTask, updateTask, updateTaskStatus } from '../controllers/taskController.js';
+import { assignTask, createTask, deleteTask, getTaskById, listTasks, unassignTask, updateTask, updateTaskStatus,getMyTasks } from '../controllers/taskController.js';
 
 const router = express.Router();
 
@@ -19,5 +19,7 @@ router.patch("/projects/:projectId/tasks/:taskId/unassign",authenticate,attachOr
 router.patch("/projects/:projectId/tasks/:taskId/status",authenticate,attachOrg,requireProjectRole(['MANAGER','MEMBER']),ensureProjectIsActive,updateTaskStatus);
 router.patch("/projects/:projectId/tasks/:taskId",authenticate,attachOrg,requireAdminOrProjectRole(['MANAGER']),ensureProjectIsActive,updateTask);
 router.delete("/projects/:projectId/tasks/:taskId",authenticate,attachOrg,requireAdminOrProjectRole(['MANAGER']),deleteTask);
+
+router.get('/my-tasks', authenticate,attachOrg,getMyTasks);
 
 export default router;

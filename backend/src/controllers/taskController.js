@@ -410,3 +410,26 @@ export const deleteTask = async(req,res) => {
         res.status(500).json({message: "failed to delete task"});
     }
 }
+
+export const getMyTasks = async (req, res) => {
+    const userId = req.user.userId;
+
+    try {
+        const result = await pool.query(
+            `SELECT 
+                t.*, 
+                p.name as project_name 
+             FROM tasks t
+             JOIN projects p ON t.project_id = p.id
+             WHERE t.assigned_to = $1 
+             AND p.is_archived = false
+             ORDER BY t.due_date ASC`,
+            [userId]
+        );
+
+        res.json(result.rows);
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ message: "Failed to fetch your tasks" });
+    }
+};

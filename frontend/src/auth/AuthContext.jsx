@@ -7,7 +7,15 @@ export const AuthProvider = ({ children }) => {
     const [user, setUser] = useState(null);
     const [loading, setLoading] = useState(true);
 
-    // 🔁 Restore session on app load
+    const fetchUser = async () => {
+        try {
+            const res = await api.get("/auth/me");
+            setUser(res.data);
+        } catch (err) {
+            setUser(null);
+        }
+    };
+
     useEffect(() => {
         const restoreSession = async () => {
             const token = localStorage.getItem("accessToken");
@@ -18,8 +26,7 @@ export const AuthProvider = ({ children }) => {
             }
 
             try {
-                const res = await api.get("/auth/me");
-                setUser(res.data);
+                await fetchUser();
             } catch (err) {
                 localStorage.removeItem("accessToken");
                 localStorage.removeItem("refreshToken");
@@ -38,8 +45,7 @@ export const AuthProvider = ({ children }) => {
         localStorage.setItem("accessToken", res.data.accessToken);
         localStorage.setItem("refreshToken", res.data.refreshToken);
 
-        const me = await api.get("/auth/me");
-        setUser(me.data);
+        await fetchUser();
     };
 
     const logout = async () => {
@@ -55,7 +61,13 @@ export const AuthProvider = ({ children }) => {
     };
 
     return (
-        <AuthContext.Provider value={{ user, login, logout, loading }}>
+        <AuthContext.Provider value={{ 
+            user, 
+            login, 
+            logout, 
+            loading,
+            refreshUser: fetchUser 
+        }}>
             {children}
         </AuthContext.Provider>
     );

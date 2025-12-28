@@ -6,8 +6,6 @@ export default function ProfilePage() {
     const { user, refreshUser } = useAuth();
 
     const [isEditing, setIsEditing] = useState(false);
-    
-    // We keep two states: 'form' for edits, 'data' for the committed view
     const [data, setData] = useState(null);
     const [form, setForm] = useState({
         name: "",
@@ -24,11 +22,20 @@ export default function ProfilePage() {
         loadProfile();
     }, []);
 
+    useEffect(() => {
+        if (message.text) {
+            const timer = setTimeout(() => {
+                setMessage({ type: "", text: "" });
+            }, 3000);
+            return () => clearTimeout(timer);
+        }
+    }, [message]);
+
     const loadProfile = async () => {
         try {
             const res = await api.get("/users/me/profile");
             setData(res.data);
-            setForm(res.data); // Sync form with data
+            setForm(res.data);
         } catch (err) {
             setMessage({ type: "error", text: "Failed to load profile data" });
         } finally {
@@ -41,7 +48,7 @@ export default function ProfilePage() {
     };
 
     const handleCancel = () => {
-        setForm(data); // Reset form to original data
+        setForm(data);
         setIsEditing(false);
         setMessage({ type: "", text: "" });
     };
@@ -53,9 +60,9 @@ export default function ProfilePage() {
 
         try {
             await api.patch("/users/me/profile", form);
-            await refreshUser(); 
-            setData(form); // Update local view data
-            setIsEditing(false); // Switch back to view mode
+            await refreshUser();
+            setData(form);
+            setIsEditing(false);
             setMessage({ type: "success", text: "Profile updated successfully" });
         } catch (err) {
             setMessage({ type: "error", text: "Failed to update profile" });
@@ -74,8 +81,6 @@ export default function ProfilePage() {
 
     return (
         <div className="max-w-5xl mx-auto py-8 px-4">
-            
-            {/* Header Section */}
             <div className="flex justify-between items-start mb-8">
                 <div>
                     <h1 className="text-3xl font-bold text-gray-900">My Profile</h1>
@@ -92,18 +97,15 @@ export default function ProfilePage() {
             </div>
 
             {message.text && (
-                <div className={`p-4 rounded-md mb-6 text-sm font-medium ${message.type === "error" ? "bg-red-50 text-red-700" : "bg-green-50 text-green-700"}`}>
+                <div className={`p-4 rounded-md mb-6 text-sm font-medium transition-opacity duration-500 ${message.type === "error" ? "bg-red-50 text-red-700" : "bg-green-50 text-green-700"}`}>
                     {message.text}
                 </div>
             )}
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-                
-                {/* --- Left Column: Identity --- */}
                 <div className="md:col-span-1 space-y-6">
                     <div className="bg-white p-6 rounded-xl border shadow-sm flex flex-col items-center text-center">
                         <div className="w-32 h-32 rounded-full overflow-hidden bg-gray-100 ring-4 ring-white shadow-lg flex items-center justify-center mb-4">
-                            {/* Logic to show Image or Initials */}
                             {form.avatar_url ? (
                                 <img
                                     src={form.avatar_url}
@@ -124,7 +126,6 @@ export default function ProfilePage() {
                             {data.job_title || "No Job Title"}
                         </p>
 
-                        {/* Only show URL input in Edit Mode */}
                         {isEditing && (
                             <div className="w-full text-left mt-2 animate-fade-in">
                                 <label className="block text-xs font-semibold text-gray-500 uppercase mb-2">Avatar Image URL</label>
@@ -141,7 +142,6 @@ export default function ProfilePage() {
                     </div>
                 </div>
 
-                {/* --- Right Column: Details --- */}
                 <div className="md:col-span-2">
                     <form onSubmit={handleSubmit} className="bg-white rounded-xl border shadow-sm overflow-hidden">
                         <div className="p-6 space-y-6">
@@ -150,13 +150,11 @@ export default function ProfilePage() {
                             </div>
 
                             <div className="grid grid-cols-1 gap-6">
-                                {/* Email - Always Read Only */}
                                 <div>
                                     <label className="block text-sm font-medium text-gray-500 mb-1">Email Address</label>
                                     <div className="text-gray-900 font-medium px-1">{user?.email}</div>
                                 </div>
 
-                                {/* Full Name */}
                                 <div>
                                     <label className="block text-sm font-medium text-gray-500 mb-1">Full Name</label>
                                     {isEditing ? (
@@ -172,7 +170,6 @@ export default function ProfilePage() {
                                 </div>
 
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                    {/* Job Title */}
                                     <div>
                                         <label className="block text-sm font-medium text-gray-500 mb-1">Job Title</label>
                                         {isEditing ? (
@@ -186,7 +183,6 @@ export default function ProfilePage() {
                                             <div className="text-gray-900 px-1">{data.job_title || "-"}</div>
                                         )}
                                     </div>
-                                    {/* Timezone */}
                                     <div>
                                         <label className="block text-sm font-medium text-gray-500 mb-1">Timezone</label>
                                         {isEditing ? (
@@ -204,7 +200,6 @@ export default function ProfilePage() {
                             </div>
                         </div>
 
-                        {/* Footer - Only visible in Edit Mode */}
                         {isEditing && (
                             <div className="bg-gray-50 px-6 py-4 flex items-center justify-end gap-3 border-t">
                                 <button

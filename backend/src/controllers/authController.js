@@ -186,9 +186,6 @@ export const refresh = async(req,res) => {
 };
 
 export const me = async (req, res) => {
-    // 1. Log this to verify (Optional debugging step)
-    // console.log("Decoded User from Token:", req.user); 
-
     const result = await pool.query(
         `
         SELECT
@@ -199,12 +196,14 @@ export const me = async (req, res) => {
             d.name,
             d.avatar_url,
             d.job_title,
-            d.timezone
+            d.timezone,
+            o.name as org_name  -- 1. Select the Org Name
         FROM users u
-        LEFT JOIN user_details d ON d.user_id = u.id  -- Changed to LEFT JOIN (see note below)
+        LEFT JOIN user_details d ON d.user_id = u.id
+        JOIN organizations o ON u.org_id = o.id -- 2. Join Organizations table
         WHERE u.id = $1
         `,
-        [req.user.userId] // <--- CHANGE THIS from .id to .userId
+        [req.user.userId]
     );
 
     if (result.rowCount === 0) {
@@ -220,8 +219,8 @@ export const me = async (req, res) => {
         email: user.email,
         role: user.role,
         orgId: user.org_id,
-        // Handle potential nulls if user_details is missing
-        name: user.name || "", 
+        org_name: user.org_name, 
+        name: user.name || "",
         avatar_url: user.avatar_url || "",
         job_title: user.job_title || "",
         timezone: user.timezone || ""

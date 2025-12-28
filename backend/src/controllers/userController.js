@@ -125,7 +125,7 @@ export const acceptInvite = async (req, res) => {
 export const listUsers = async (req, res) => {
     const limit = parseInt(req.query.limit) || 20;
     const offset = parseInt(req.query.offset) || 0;
-    const orgId = req.orgId; // FIXED: Changed from req.org.id to req.orgId
+    const orgId = req.orgId;
 
     const result = await pool.query(
         `
@@ -134,9 +134,10 @@ export const listUsers = async (req, res) => {
             u.email,
             u.role,
             u.is_active,
-            d.name
+            d.name,
+            d.avatar_url  -- <--- ADD THIS LINE
         FROM users u
-        LEFT JOIN user_details d ON d.user_id = u.id  -- FIXED: Changed JOIN to LEFT JOIN
+        LEFT JOIN user_details d ON d.user_id = u.id
         WHERE u.org_id = $1
         ORDER BY d.name
         LIMIT $2 OFFSET $3

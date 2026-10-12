@@ -1,161 +1,158 @@
-# Multi-Tenant Management & Workflow App
+# Multi-Tenant Workflow & Management Platform
 
-A full-stack multi-tenant project and task management application with role-based access control, organization-level isolation, audit logging, and a structured task workflow.
+A robust, full-stack multi-tenant project and task orchestration platform built with Node.js, Express, PostgreSQL, and React. Engineered with organization-level data isolation, dual-token JWT authentication with refresh token rotation, role-based access control (RBAC), and immutable audit logging.
 
-## Features
+---
 
-- **Multi-tenancy** — Each organization (tenant) is fully isolated
-- **Authentication** — JWT access tokens + refresh token rotation
-- **Organization signup** — Create an organization + admin user in one step
-- **User invitations** — Admin can invite members with role assignment
-- **Role-based access control**
-  - Organization level: `ADMIN`, `MEMBER`
-  - Project level: `MANAGER`, `MEMBER`
-- **Projects**
-  - Create, update, archive / unarchive
-  - Manage project members and roles
-- **Tasks**
-  - Create, assign, unassign, update, delete
-  - Status workflow: `TODO` → `IN_PROGRESS` → `DONE`
-  - My Tasks view
-- **User management** — List users, change roles, deactivate / reactivate
-- **Profiles** — Name, avatar, job title, timezone
-- **Audit logging** — Organization-wide, project-level, and personal activity logs
-- **Dashboard** — Stats for users, projects, and active tasks
+## Architecture & System Highlights
+
+- **Multi-Tenant Data Isolation**: Organization-level context enforcement across all resource mutations and queries to guarantee strict isolation.
+- **Defense-in-Depth Auth**: Short-lived JWT access tokens paired with cryptographically hashed, rotating refresh tokens stored in PostgreSQL.
+- **Granular RBAC**:
+  - **Organization Tier**: `ADMIN` (Org settings, member invitations, team management), `MEMBER` (Scoped project view).
+  - **Project Tier**: `MANAGER` (Task delegation, member assignment), `MEMBER` (Task execution).
+- **Audit Ledger**: Comprehensive activity logging capturing entity modifications, actor signatures, and JSONB metadata.
+- **Deterministic Workflow State Machine**: Predictable task lifecycles enforcing `TODO` → `IN_PROGRESS` → `DONE` transitions with guard validations.
+
+---
 
 ## Tech Stack
 
-| Layer      | Technologies                                      |
-|------------|---------------------------------------------------|
-| **Backend**  | Node.js, Express 5, PostgreSQL, JWT, bcrypt, CORS |
-| **Frontend** | React 19, Vite, Tailwind CSS, React Router, Axios, Lucide Icons |
+| Domain | Technologies |
+| :--- | :--- |
+| **Backend** | Node.js (v18+), Express 5, PostgreSQL 15, `pg` Pool, JWT, bcrypt |
+| **Frontend** | React 19, Vite, Tailwind CSS, React Router v6, Axios, Lucide React |
+| **DevOps & Tooling** | Docker, Docker Compose, Postman |
+
+---
 
 ## Project Structure
 
-```
+```text
 multi_tenent_management_workflow_app/
 ├── backend/
 │   ├── src/
-│   │   ├── controllers/     # Business logic
-│   │   ├── middlewares/     # Auth, RBAC, org context, guards
-│   │   ├── routes/          # API routes
-│   │   ├── workflows/       # Task state machine
-│   │   ├── guards/          # Last-admin / last-manager protections
-│   │   ├── utils/           # Audit logger
-│   │   ├── db/              # PostgreSQL pool
-│   │   ├── app.js
-│   │   └── server.js
+│   │   ├── controllers/      # Route handlers and business logic
+│   │   ├── middlewares/      # JWT auth, org context extraction, RBAC
+│   │   ├── routes/           # REST endpoint definitions
+│   │   ├── workflows/        # Deterministic state machine transitions
+│   │   ├── guards/           # Edge-case safety (e.g., last admin safeguards)
+│   │   ├── utils/            # Audit logging utilities
+│   │   ├── db/               # Connection pooling and schema migrations
+│   │   │   ├── pool.js       # PostgreSQL client pool configuration
+│   │   │   └── schema.sql    # DDL schema definitions and indexes
+│   │   ├── app.js            # Express application middleware pipeline
+│   │   └── server.js         # HTTP server entrypoint
 │   └── package.json
 ├── frontend/
 │   ├── src/
-│   │   ├── api/             # Axios instance + API modules
-│   │   ├── auth/            # Auth context
-│   │   ├── components/
-│   │   ├── pages/
+│   │   ├── api/              # Axios client and interceptors
+│   │   ├── auth/             # Authentication context and token management
+│   │   ├── components/       # Reusable UI component library
+│   │   ├── pages/            # Application views (Dashboard, Tasks, Settings)
 │   │   └── App.jsx
 │   └── package.json
-└── .gitignore
+├── docker-compose.yml        # PostgreSQL container orchestrator
+└── README.md
 ```
 
-## Prerequisites
+---
 
-- Node.js 18+
-- PostgreSQL 14+
-- npm or yarn
+## Quickstart Guide
 
-## Setup
+### 1. Prerequisites
+- [Node.js](https://nodejs.org/) (v18+)
+- [Docker](https://www.docker.com/) & Docker Compose (or local PostgreSQL 15+)
+- Git
 
-### 1. Clone the repository
-
+### 2. Clone Repository
 ```bash
 git clone https://github.com/Koushik-Pula/multi_tenent_management_workflow_app.git
 cd multi_tenent_management_workflow_app
 ```
 
-### 2. Backend
+### 3. Spin Up PostgreSQL Database
+Using Docker Compose automatically mounts the schema and initializes all tables and relational indexes:
 
+```bash
+docker compose up -d
+```
+
+*(Alternatively, run the SQL script located in `backend/src/db/schema.sql` against your existing PostgreSQL instance).*
+
+### 4. Backend Setup
 ```bash
 cd backend
 npm install
 ```
 
-Create a `.env` file in the `backend` folder:
-
+Create a `.env` file inside `backend/`:
 ```env
 PORT=5000
 DB_HOST=localhost
 DB_PORT=5432
-DB_NAME=your_database_name
-DB_USER=your_db_user
-DB_PASSWORD=your_db_password
+DB_NAME=workflow_db
+DB_USER=postgres
+DB_PASSWORD=postgrespassword
 
-JWT_SECRET=your_access_token_secret
-JWT_REFRESH_SECRET=your_refresh_token_secret
+JWT_SECRET=super_secret_access_token_key_change_in_production
+JWT_REFRESH_SECRET=super_secret_refresh_token_key_change_in_production
 
 FRONTEND_URL=http://localhost:5173
 ```
 
-> **Note:** The repository does not include a SQL schema file. You will need to create the required tables (`organizations`, `users`, `user_details`, `invites`, `projects`, `project_members`, `tasks`, `audit_logs`, `refresh_tokens`, etc.) based on the queries used in the controllers before the app will run.
-
-Start the backend:
-
+Start the API server:
 ```bash
 npm run dev
 ```
+Backend API will boot at `http://localhost:5000`.
 
-The API will be available at `http://localhost:5000`.
-
-### 3. Frontend
-
+### 5. Frontend Setup
+In a new terminal window:
 ```bash
-cd ../frontend
+cd frontend
 npm install
 npm run dev
 ```
+Access the client dashboard at `http://localhost:5173`.
 
-The frontend runs at `http://localhost:5173` and is configured to talk to the backend on port 5000.
+---
 
-## Key API Routes
+## Core API Reference
 
-| Method | Endpoint                              | Description                     | Access              |
-|--------|---------------------------------------|---------------------------------|---------------------|
-| POST   | `/auth/signup`                        | Create org + admin              | Public              |
-| POST   | `/auth/login`                         | Login                           | Public              |
-| POST   | `/auth/refresh`                       | Refresh tokens                  | Public              |
-| POST   | `/users/invite`                       | Invite user                     | ADMIN               |
-| POST   | `/users/accept-invite`                | Accept invite                   | Public              |
-| GET    | `/users`                              | List organization users         | ADMIN               |
-| GET    | `/users/stats`                        | Dashboard stats                 | Authenticated       |
-| POST   | `/projects`                           | Create project                  | ADMIN               |
-| GET    | `/projects`                           | List projects                   | ADMIN / MEMBER      |
-| POST   | `/projects/:id/members`               | Add project member              | ADMIN / MANAGER     |
-| POST   | `/tasks/projects/:projectId/tasks`    | Create task                     | ADMIN / MANAGER     |
-| PATCH  | `/tasks/.../status`                   | Update task status              | Project member      |
-| GET    | `/audits/audit-logs`                  | Org audit logs                  | ADMIN               |
+### Authentication & Tenant Onboarding
+| Method | Endpoint | Description | Access |
+| :--- | :--- | :--- | :--- |
+| `POST` | `/auth/signup` | Register organization + root admin | Public |
+| `POST` | `/auth/login` | Authenticate credentials and issue tokens | Public |
+| `POST` | `/auth/refresh` | Rotate refresh token and issue new access token | Public |
 
-## Roles & Permissions
+### Organization & Team Management
+| Method | Endpoint | Description | Access |
+| :--- | :--- | :--- | :--- |
+| `POST` | `/users/invite` | Send organization invite with assigned role | `ADMIN` |
+| `POST` | `/users/accept-invite` | Complete registration from invite token | Public |
+| `GET` | `/users` | List all members in the tenant org | `ADMIN` |
+| `GET` | `/users/stats` | Aggregate dashboard metrics | Authenticated |
 
-| Role          | Scope     | Capabilities                                      |
-|---------------|-----------|---------------------------------------------------|
-| **ADMIN**     | Organization | Full org control, user management, all projects |
-| **MEMBER**    | Organization | Access projects they are added to               |
-| **MANAGER**   | Project      | Manage project members & tasks                  |
-| **MEMBER**    | Project      | Work on assigned tasks                          |
+### Projects & Task Execution
+| Method | Endpoint | Description | Access |
+| :--- | :--- | :--- | :--- |
+| `POST` | `/projects` | Create a new organizational project | `ADMIN` |
+| `GET` | `/projects` | List projects available to the authenticated actor | `ADMIN` / `MEMBER` |
+| `POST` | `/projects/:id/members` | Add user to project team | `ADMIN` / `MANAGER` |
+| `POST` | `/tasks/projects/:projectId/tasks` | Create task within project scope | `ADMIN` / `MANAGER` |
+| `PATCH` | `/tasks/:id/status` | Advance task state machine (`TODO` → `DONE`) | Assigned / `MANAGER` |
+| `GET` | `/audits/audit-logs` | Retrieve tenant-scoped audit timeline | `ADMIN` |
 
-## Task Workflow
+---
 
-Tasks follow a strict state machine defined in `backend/src/workflows/taskworkflow.js`:
+## Database Design & Indexes
 
-```
-TODO  →  IN_PROGRESS  →  DONE
-```
+The PostgreSQL database enforces relational integrity with composite foreign keys, cascading deletions, and performance indexing:
+- `idx_users_org` on `users(org_id)`
+- `idx_projects_org` on `projects(org_id)`
+- `idx_tasks_project` on `tasks(project_id)`
+- `idx_audit_logs_org` on `audit_logs(org_id)`
 
-## Development
-
-- Backend uses `nodemon` for hot reload (`npm run dev`)
-- Frontend uses Vite with HMR
-- CORS is configured to allow `http://localhost:5173`
-
-## License
-
-ISC
+---
